@@ -149,15 +149,15 @@ title: {title}
     return md_markup.encode()
 
 
-def intermediary_to_dot(tables, relationships, title=""):
+def intermediary_to_dot(tables, relationships, title="", field_colors=None):
     """Save the intermediary representation to dot format."""
-    dot_file = _intermediary_to_dot(tables, relationships, title)
+    dot_file = _intermediary_to_dot(tables, relationships, title, field_colors=field_colors)
     return dot_file.encode()
 
 
-def intermediary_to_schema(tables, relationships, title="", extension="png"):
+def intermediary_to_schema(tables, relationships, title="", extension="png", field_colors=None):
     """Transforms and save the intermediary representation to the file chosen."""
-    dot_file = _intermediary_to_dot(tables, relationships, title)
+    dot_file = _intermediary_to_dot(tables, relationships, title, field_colors=field_colors)
     if not GRAPHVIZ_AVAILABLE:
         raise Exception("either pygraphviz or graphviz should be installed")
     if USE_PYGRAPHVIZ:
@@ -210,14 +210,14 @@ def _intermediary_to_mermaid_er(tables, relationships):
     return f"erDiagram\n{t}\n{r}"
 
 
-def _intermediary_to_dot(tables, relationships, title=""):
+def _intermediary_to_dot(tables, relationships, title="", field_colors=None):
     """Returns the dot source representing the database in a string."""
-    t = "\n".join(t.to_dot() for t in tables)
+    t = "\n".join(t.to_dot(field_colors=field_colors) for t in tables)
     r = "\n".join(r.to_dot() for r in relationships)
 
     graph_config = (
         f"""{DOT_GRAPH_BEGINNING}
-         label="{title}"
+         label=\"{title}\"
          labelloc=t\n"""
         if title
         else DOT_GRAPH_BEGINNING
@@ -301,22 +301,24 @@ def all_to_intermediary(filename_or_input, schema=None):
         raise ValueError(f"Cannot process filename_or_input {input_class_name}: {e}")
 
 
-def get_output_mode(output: typing.Union[str, None], mode: str):
+def get_output_mode(output: typing.Union[str, None], mode: str, field_colors=None):
     """From the output name and the mode returns a the function that will transform the intermediary representation to the output."""
     if mode != "auto":
         try:
-            return switch_output_mode_auto[mode]
+            fn = switch_output_mode_auto[mode]
         except KeyError:
             raise ValueError(f'Mode "{mode}" is not supported.')
+        return partial(fn, field_colors=field_colors) if mode == "dot" else fn
 
     if output is None:
         raise ValueError("Mode must be set if output file is None")
 
     extension = output.split(".")[-1]
     try:
-        return switch_output_mode[extension]
+        fn = switch_output_mode[extension]
     except KeyError:
         return partial(intermediary_to_schema, extension=extension)
+    return partial(fn, field_colors=field_colors) if extension == "dot" else fn
 
 
 def filter_resources(
@@ -394,6 +396,7 @@ def render_er(
     exclude_columns=None,
     schema=None,
     title=None,
+    field_colors=None,
 ):
     """Transform the metadata into a representation.
 
@@ -430,8 +433,8 @@ def render_er(
             exclude_tables=exclude_tables,
             exclude_columns=exclude_columns,
         )
-        intermediary_to_output = get_output_mode(output, mode)
-        text = intermediary_to_output(tables, relationships, title)
+        intermediary_to_output = get_output_mode(output, mode, field_colors=field_colors)
+        text = intermediary_to_output(tables, relationships, title, field_colors=field_colors)
         # graphviz does not yet support printing to stdout
         # but writes directly to the output file
         # https://github.com/xflr6/graphviz/pull/234

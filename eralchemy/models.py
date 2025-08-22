@@ -115,9 +115,24 @@ class Column(Drawable):
         name = sanitize_mermaid(self.name, is_er=True)
         return f" {type_str} {name} {'PK' if self.is_key else ''}"
 
-    def to_dot(self) -> str:
+    def to_dot(self, field_colors=None, table_name=None) -> str:
+        bgcolor = ""
+        color = None
+        if field_colors and table_name:
+            import re
+
+            for table_pat, col_map in field_colors.items():
+                if re.fullmatch(table_pat, table_name):
+                    for col_pat, col_color in col_map.items():
+                        if re.fullmatch(col_pat, self.name):
+                            color = col_color
+                            break
+                    if color:
+                        break
+        if color:
+            bgcolor = f' BGCOLOR="{color}"'
         base = ROW_TAGS.format(
-            ' ALIGN="LEFT" {port}',
+            f' ALIGN="LEFT"{bgcolor} {{port}}',
             "{key_opening}{col_name}{key_closing} {type}{null}",
         )
         return base.format(
@@ -322,8 +337,10 @@ class Table(Drawable):
     def header_dot(self) -> str:
         return ROW_TAGS.format("", f'<B><FONT POINT-SIZE="16">{self.name}</FONT></B>')
 
-    def to_dot(self) -> str:
-        body = "".join(c.to_dot() for c in self.columns)
+    def to_dot(self, field_colors=None) -> str:
+        body = "".join(
+            c.to_dot(field_colors=field_colors, table_name=self.name) for c in self.columns
+        )
         return TABLE.format(self.name, self.header_dot, body)
 
     def to_puml(self) -> str:
